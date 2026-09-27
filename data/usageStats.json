@@ -1,0 +1,15 @@
+[
+  {
+    "id": "global_stats",
+    "totalCommands": 7,
+    "toolUsageCounts": {
+      "qr-generator": 2,
+      "emi-calculator": 3,
+      "open-whatsapp": 1,
+      "pdf-compressor": 1
+    },
+    "aiRequestsCount": 7,
+    "createdAt": "2026-09-27T13:37:48.865Z",
+    "updatedAt": "2026-09-27T13:42:18.340Z"
+  }
+]

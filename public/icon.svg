@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="100" fill="#090d16" />
+  <circle cx="256" cy="256" r="230" fill="none" stroke="#1f293d" stroke-width="6" stroke-dasharray="12 12" opacity="0.6"/>
+  
+  <!-- Outer precision ring -->
+  <circle cx="256" cy="256" r="190" fill="#0d1322" stroke="#334155" stroke-width="4" />
+  
+  <!-- Sleek NINJA Shuriken / Geometric N Blade -->
+  <g transform="translate(256, 256)">
+    <!-- Top Blade -->
+    <path d="M 0 -130 L 28 -36 L 0 -18 Z" fill="#06b6d4" />
+    <path d="M 0 -130 L -28 -36 L 0 -18 Z" fill="#0891b2" />
+    
+    <!-- Right Blade -->
+    <path d="M 130 0 L 36 28 L 18 0 Z" fill="#10b981" />
+    <path d="M 130 0 L 36 -28 L 18 0 Z" fill="#059669" />
+    
+    <!-- Bottom Blade -->
+    <path d="M 0 130 L -28 36 L 0 18 Z" fill="#06b6d4" />
+    <path d="M 0 130 L 28 36 L 0 18 Z" fill="#0891b2" />
+    
+    <!-- Left Blade -->
+    <path d="M -130 0 L -36 -28 L -18 0 Z" fill="#10b981" />
+    <path d="M -130 0 L -36 28 L -18 0 Z" fill="#059669" />
+
+    <!-- Center Core Disc -->
+    <circle cx="0" cy="0" r="24" fill="#090d16" stroke="#38bdf8" stroke-width="4" />
+    <circle cx="0" cy="0" r="10" fill="#38bdf8" />
+  </g>
+
+  <!-- Technical crosshairs -->
+  <line x1="256" y1="40" x2="256" y2="70" stroke="#38bdf8" stroke-width="3" stroke-linecap="round" />
+  <line x1="256" y1="442" x2="256" y2="472" stroke="#38bdf8" stroke-width="3" stroke-linecap="round" />
+  <line x1="40" y1="256" x2="70" y2="256" stroke="#10b981" stroke-width="3" stroke-linecap="round" />
+  <line x1="442" y1="256" x2="472" y2="256" stroke="#10b981" stroke-width="3" stroke-linecap="round" />
+</svg>

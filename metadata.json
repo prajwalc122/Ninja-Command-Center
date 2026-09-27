@@ -1,0 +1,6 @@
+{
+  "name": "NINJA — Personal Web Command Center",
+  "description": "One intelligent command center for the tools, files, calculations, and workflows you use every day.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
