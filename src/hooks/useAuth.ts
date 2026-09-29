@@ -132,6 +132,32 @@ export function useAuth() {
     return data.user;
   };
 
+  const forgotPassword = async (email: string) => {
+    const res = await fetch('/api/auth/forgot-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'Password reset request failed');
+    }
+    return data;
+  };
+
+  const resetPassword = async (token: string, newPassword: string) => {
+    const res = await fetch('/api/auth/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, newPassword }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || 'Failed to reset password');
+    }
+    return data;
+  };
+
   const logout = async () => {
     try {
       if (auth.currentUser) {
@@ -153,6 +179,8 @@ export function useAuth() {
     loading,
     login,
     register,
+    forgotPassword,
+    resetPassword,
     loginWithGoogle,
     logout,
     isAuthenticated: !!user,

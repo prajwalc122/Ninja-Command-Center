@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import bcrypt from 'bcryptjs';
 
 export interface BaseRecord {
   id: string;
@@ -143,11 +144,16 @@ class DatabaseManager {
   }
 
   collection<T extends BaseRecord>(name: string): JsonCollection<T> {
-    if (!this.collections.has(name)) {
-      const filePath = path.join(this.dbDir, `${name}.json`);
-      this.collections.set(name, new JsonCollection<T>(filePath));
+    const safeName = path.basename(name).replace(/[^a-zA-Z0-9_]/g, '');
+    if (!safeName) {
+      throw new Error(`Invalid collection name: ${name}`);
     }
-    return this.collections.get(name)!;
+
+    if (!this.collections.has(safeName)) {
+      const filePath = path.join(this.dbDir, `${safeName}.json`);
+      this.collections.set(safeName, new JsonCollection<T>(filePath));
+    }
+    return this.collections.get(safeName)!;
   }
 
   async init() {
@@ -163,15 +169,14 @@ class DatabaseManager {
     const usersCol = this.collection('users');
     const existingAdmin = await usersCol.findOne({ role: 'admin' });
     if (!existingAdmin) {
-      // password: "ninja-secure-admin"
+      const adminHash = await bcrypt.hash('admin123', 12);
       await usersCol.insertOne({
         email: 'admin@ninja.local',
         name: 'NINJA Lead Engineer',
         role: 'admin',
-        passwordHash: '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918', // sha256 of "admin123"
-        salt: 'ninja_salt_2026',
+        passwordHash: adminHash,
       });
-      console.log('Default Admin Account seeded: admin@ninja.local / admin123');
+      console.log('Default Admin Account seeded: admin@ninja.local');
     }
 
     // Seed default sample workflows

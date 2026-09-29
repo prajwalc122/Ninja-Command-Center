@@ -107,6 +107,13 @@ export interface AdminStats {
   aiRequestsCount: number;
   uptime: number;
   recentActivity: CommandHistoryItem[];
+  securityLogs?: Array<{
+    timestamp: string;
+    eventType: string;
+    ip: string;
+    email?: string;
+    details?: Record<string, any>;
+  }>;
   systemHealth: {
     status: 'healthy' | 'degraded' | 'error';
     database: string;

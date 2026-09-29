@@ -69,7 +69,7 @@ export const GeminiQuickWidget: React.FC<Props> = ({ onOpenFullAssistant }) => {
                   <span>Gemini Assistant</span>
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                 </div>
-                <div className="text-[10px] text-slate-400">Google Gemini 3.8 Flash</div>
+                <div className="text-[10px] text-slate-400">Gemini 3.5 Flash • Maps Grounded</div>
               </div>
             </div>
 

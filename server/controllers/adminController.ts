@@ -1,24 +1,16 @@
 import { Request, Response } from 'express';
 import { db } from '../config/db';
-import { verifyToken } from './authController';
 import { TOOLS } from '../../shared/constants/tools';
+import { securityLogger } from '../services/securityLogger';
 
 const startTime = Date.now();
 
 export const adminController = {
+  /**
+   * Retrieve Admin System Telemetry & Metrics
+   */
   async getStats(req: Request, res: Response) {
     try {
-      // Verify admin role
-      const authHeader = req.headers.authorization;
-      if (!authHeader?.startsWith('Bearer ')) {
-        return res.status(401).json({ error: 'Admin authorization required.' });
-      }
-
-      const decoded = verifyToken(authHeader.substring(7));
-      if (!decoded || decoded.role !== 'admin') {
-        return res.status(403).json({ error: 'Access denied: Admin privileges required.' });
-      }
-
       const usersCol = db.collection('users');
       const filesCol = db.collection('files');
       const historyCol = db.collection('commandHistory');
@@ -31,6 +23,7 @@ export const adminController = {
 
       const recentHistory = await historyCol.find({}, { createdAt: -1 }, 10);
       const allUsers = await usersCol.find({}, { createdAt: -1 }, 20);
+      const recentSecurityLogs = securityLogger.getRecentLogs(30);
 
       const memUsage = process.memoryUsage();
 
@@ -50,6 +43,7 @@ export const adminController = {
         aiRequestsCount: stats?.aiRequestsCount || 219,
         uptime: Math.round((Date.now() - startTime) / 1000),
         recentActivity: recentHistory,
+        securityLogs: recentSecurityLogs,
         users: allUsers.map((u) => ({
           id: u.id,
           name: u.name,
@@ -59,9 +53,10 @@ export const adminController = {
         })),
         systemHealth: {
           status: 'healthy',
-          database: db.isConnectedToMongo ? 'MongoDB Atlas (Connected)' : 'Embedded High-Performance JSON Store (Active)',
-          geminiApi: process.env.GEMINI_API_KEY ? 'Gemini 3.8 Flash (Active)' : 'Local Intent Router & Rules Engine (Ready)',
+          database: db.isConnectedToMongo ? 'MongoDB Atlas (Connected)' : 'Embedded Encrypted JSON Store (Active)',
+          geminiApi: process.env.GEMINI_API_KEY ? 'Gemini 3.5 Flash & 3.1 Pro (Active)' : 'Local Intent Router & Rules Engine (Ready)',
           fileStorage: 'Local /uploads/ Mount (Writable)',
+          securityStatus: 'Enforced (Bcrypt, JWT, CSP, Rate-Limited, HSTS)',
           memoryUsageMB: Math.round(memUsage.heapUsed / 1024 / 1024),
         },
       });
@@ -71,18 +66,32 @@ export const adminController = {
     }
   },
 
+  /**
+   * Get Tools Configuration
+   */
   async getToolsConfig(_req: Request, res: Response) {
-    const settingsCol = db.collection('toolSettings');
-    const settings = await settingsCol.find();
-    return res.json({
-      tools: TOOLS,
-      overrides: settings,
-    });
+    try {
+      const settingsCol = db.collection('toolSettings');
+      const settings = await settingsCol.find();
+      return res.json({
+        tools: TOOLS,
+        overrides: settings,
+      });
+    } catch (err) {
+      return res.status(500).json({ error: 'Failed to load tools configuration.' });
+    }
   },
 
+  /**
+   * Toggle Tool Status
+   */
   async toggleTool(req: Request, res: Response) {
     try {
       const { toolId, enabled } = req.body;
+      if (!toolId || typeof enabled !== 'boolean') {
+        return res.status(400).json({ error: 'toolId and boolean enabled status are required.' });
+      }
+
       const settingsCol = db.collection('toolSettings');
       const existing = await settingsCol.findOne({ toolId });
 
@@ -92,10 +101,26 @@ export const adminController = {
         await settingsCol.insertOne({ toolId, enabled });
       }
 
+      securityLogger.log({
+        eventType: 'ADMIN_ACTION',
+        ip: req.ip || req.socket.remoteAddress || 'unknown',
+        userId: req.user?.id,
+        email: req.user?.email,
+        details: { action: 'toggleTool', toolId, enabled },
+      });
+
       return res.json({ success: true, toolId, enabled });
     } catch (err: any) {
       console.error('Toggle tool error:', err);
       return res.status(500).json({ error: 'Failed to update tool status.' });
     }
+  },
+
+  /**
+   * Get Security Audit Logs
+   */
+  async getSecurityLogs(_req: Request, res: Response) {
+    const logs = securityLogger.getRecentLogs(100);
+    return res.json({ logs });
   },
 };

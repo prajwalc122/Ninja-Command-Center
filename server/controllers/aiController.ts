@@ -10,7 +10,9 @@ export const aiController = {
         return res.status(400).json({ error: 'Command text is required.' });
       }
 
-      const result = await geminiService.interpretCommand(command.trim(), fileInfo);
+      // Input length limit
+      const sanitizedCommand = command.trim().slice(0, 500);
+      const result = await geminiService.interpretCommand(sanitizedCommand, fileInfo);
 
       // Increment tool usage stats
       try {
@@ -54,7 +56,8 @@ export const aiController = {
         return res.status(400).json({ error: 'Text content is required for summarization.' });
       }
 
-      const summary = await geminiService.summarize(text, format || 'bullets');
+      const sanitizedText = text.slice(0, 25000);
+      const summary = await geminiService.summarize(sanitizedText, format || 'bullets');
       return res.json({ summary });
     } catch (err: any) {
       console.error('Summarize error:', err);
@@ -69,8 +72,10 @@ export const aiController = {
         return res.status(400).json({ error: 'Text and targetLanguage are required.' });
       }
 
-      const translation = await geminiService.translate(text, targetLanguage);
-      return res.json({ translation, targetLanguage });
+      const sanitizedText = String(text).slice(0, 25000);
+      const sanitizedLang = String(targetLanguage).slice(0, 50);
+      const translation = await geminiService.translate(sanitizedText, sanitizedLang);
+      return res.json({ translation, targetLanguage: sanitizedLang });
     } catch (err: any) {
       console.error('Translate error:', err);
       return res.status(500).json({ error: 'Translation failed.' });
@@ -84,8 +89,11 @@ export const aiController = {
         return res.status(400).json({ error: 'Text is required.' });
       }
 
-      const rewritten = await geminiService.rewrite(text, tone || 'professional');
-      return res.json({ rewritten, tone });
+      const sanitizedText = String(text).slice(0, 25000);
+      const validTones = ['casual', 'concise', 'persuasive', 'professional'] as const;
+      const selectedTone = validTones.includes(tone) ? tone : 'professional';
+      const rewritten = await geminiService.rewrite(sanitizedText, selectedTone);
+      return res.json({ rewritten, tone: selectedTone });
     } catch (err: any) {
       console.error('Rewrite error:', err);
       return res.status(500).json({ error: 'Rewrite failed.' });
@@ -95,7 +103,12 @@ export const aiController = {
   async generateResume(req: Request, res: Response) {
     try {
       const { name, role, skills, experience } = req.body;
-      const resume = await geminiService.generateResume({ name, role, skills, experience });
+      const resume = await geminiService.generateResume({
+        name: typeof name === 'string' ? name.slice(0, 100) : '',
+        role: typeof role === 'string' ? role.slice(0, 100) : '',
+        skills: typeof skills === 'string' ? skills.slice(0, 2000) : '',
+        experience: typeof experience === 'string' ? experience.slice(0, 5000) : '',
+      });
       return res.json({ resume });
     } catch (err: any) {
       console.error('Resume builder error:', err);
@@ -105,19 +118,38 @@ export const aiController = {
 
   async chat(req: Request, res: Response) {
     try {
-      const { messages, userMessage, systemPrompt } = req.body;
+      const { messages, userMessage, systemPrompt, model, role, enableMaps } = req.body;
       let messageList: Array<{ role: 'user' | 'assistant'; content: string }> = [];
 
       if (Array.isArray(messages) && messages.length > 0) {
-        messageList = messages;
+        // Enforce maximum 25 turns in conversation history and max 4000 chars per message
+        messageList = messages.slice(-25).map((m: any) => ({
+          role: m.role === 'assistant' ? 'assistant' : 'user',
+          content: typeof m.content === 'string' ? m.content.slice(0, 4000) : '',
+        }));
       } else if (userMessage) {
-        messageList = [{ role: 'user', content: String(userMessage) }];
+        messageList = [{ role: 'user', content: String(userMessage).slice(0, 4000) }];
       } else {
         return res.status(400).json({ error: 'messages array or userMessage string is required.' });
       }
 
-      const reply = await geminiService.chat(messageList, systemPrompt);
-      return res.json({ reply });
+      const result = await geminiService.chat(messageList, {
+        model,
+        role,
+        customSystemInstruction: typeof systemPrompt === 'string' ? systemPrompt.slice(0, 2000) : undefined,
+        enableMaps: Boolean(enableMaps),
+      });
+
+      return res.json({
+        reply: result.reply,
+        sources: result.sources || [],
+        searchQueries: result.searchQueries || [],
+        mapsPlaces: result.mapsPlaces || [],
+        grounded: result.grounded || false,
+        groundingType: result.groundingType || 'none',
+        modelUsed: result.modelUsed,
+        roleUsed: result.roleUsed,
+      });
     } catch (err: any) {
       console.error('Gemini chat error:', err);
       return res.status(500).json({ error: 'Failed to communicate with Gemini Assistant.' });

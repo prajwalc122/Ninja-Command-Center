@@ -189,8 +189,13 @@ export const QrGeneratorTool: React.FC<Props> = ({ initialContent, onRecordHisto
         <div
           className="p-4 rounded-2xl shadow-xl transition-all max-w-[240px] w-full aspect-square flex items-center justify-center"
           style={{ backgroundColor: bgColor }}
-          dangerouslySetInnerHTML={{ __html: svgString }}
-        />
+        >
+          <img
+            src={`data:image/svg+xml;utf8,${encodeURIComponent(svgString)}`}
+            alt="Vector QR Code"
+            className="w-full h-full object-contain"
+          />
+        </div>
         <div className="mt-4 text-center">
           <div className="text-xs font-mono text-slate-400 truncate max-w-[220px]">
             {content || 'Enter text to generate'}

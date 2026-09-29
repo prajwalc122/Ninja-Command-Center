@@ -1,6 +1,6 @@
 {
   "name": "NINJA — Personal Web Command Center",
-  "description": "One intelligent command center for the tools, files, calculations, and workflows you use every day.",
+  "description": "Ninja is a fast personal web command center for opening your favorite websites with simple commands.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

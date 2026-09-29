@@ -8,6 +8,8 @@ import { Navbar } from './components/Navbar';
 import { Footer } from './components/Footer';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { AuthModal } from './features/auth/AuthModal';
+import { SettingsModal } from './components/SettingsModal';
+import { HelpModal } from './components/HelpModal';
 import { HomePage } from './pages/HomePage';
 import { ToolsPage } from './pages/ToolsPage';
 import { WorkflowsPage } from './pages/WorkflowsPage';
@@ -19,6 +21,7 @@ import { GeminiAssistantPage } from './pages/GeminiAssistantPage';
 import { GeminiQuickWidget } from './components/GeminiQuickWidget';
 import { useTheme } from './hooks/useTheme';
 import { useAuth } from './hooks/useAuth';
+import { recordHistoryToFirestore } from './lib/firebase';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<string>('home');
@@ -26,8 +29,20 @@ export default function App() {
   const [selectedToolId, setSelectedToolId] = useState<string | null>(null);
   const [selectedToolParams, setSelectedToolParams] = useState<Record<string, any>>({});
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
-  const { theme, toggleTheme } = useTheme();
-  const { user, token, loginWithGoogle, logout } = useAuth();
+  const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
+  const [showHelpModal, setShowHelpModal] = useState<boolean>(false);
+
+  const { theme, effectiveTheme, toggleTheme, setTheme } = useTheme();
+  const {
+    user,
+    token,
+    loginWithGoogle,
+    login,
+    register,
+    forgotPassword,
+    resetPassword,
+    logout,
+  } = useAuth();
 
   const handleRecordHistory = async (record: any) => {
     try {
@@ -39,6 +54,11 @@ export default function App() {
         },
         body: JSON.stringify(record),
       });
+
+      // Also persist to Firebase Firestore if logged in
+      if (user?.id) {
+        await recordHistoryToFirestore(user.id, record);
+      }
     } catch (e) {
       console.warn('Failed to record history entry:', e);
     }
@@ -61,7 +81,11 @@ export default function App() {
   };
 
   return (
-    <div className={`min-h-screen flex flex-col transition-colors duration-200 ${theme === 'dark' ? 'bg-[#090d16] text-slate-100' : 'bg-slate-50 text-slate-900'}`}>
+    <div
+      className={`min-h-screen flex flex-col transition-colors duration-200 ${
+        effectiveTheme === 'dark' ? 'bg-[#090d16] text-slate-100' : 'bg-slate-50 text-slate-900'
+      }`}
+    >
       <OfflineIndicator />
 
       {/* Top Navigation */}
@@ -72,7 +96,10 @@ export default function App() {
         onOpenAuth={() => setShowAuthModal(true)}
         onLogout={logout}
         theme={theme}
+        effectiveTheme={effectiveTheme}
         onToggleTheme={toggleTheme}
+        onOpenSettings={() => setShowSettingsModal(true)}
+        onOpenHelp={() => setShowHelpModal(true)}
       />
 
       {/* Main Content View */}
@@ -80,13 +107,11 @@ export default function App() {
         {currentTab === 'home' && (
           <HomePage
             initialCommand={initialCommand}
-            onSelectTool={(toolId, params) => {
-              setSelectedToolId(toolId);
-              setSelectedToolParams(params || {});
-              setCurrentTab('tools');
-            }}
             onNavigateTab={handleNavigateTab}
             onRecordHistory={handleRecordHistory}
+            theme={theme}
+            effectiveTheme={effectiveTheme}
+            onThemeChange={setTheme}
           />
         )}
 
@@ -132,17 +157,41 @@ export default function App() {
         {currentTab === 'admin' && <AdminPage token={token} />}
       </main>
 
-      {/* Floating Gemini Quick Assistant Widget on all pages */}
-      <GeminiQuickWidget onOpenFullAssistant={() => handleNavigateTab('assistant')} />
+      {/* Floating Gemini Quick Assistant Widget on non-home pages */}
+      {currentTab !== 'home' && (
+        <GeminiQuickWidget onOpenFullAssistant={() => handleNavigateTab('assistant')} />
+      )}
 
       {/* Global Footer */}
-      <Footer onSelectTab={handleNavigateTab} />
+      <Footer onSelectTab={handleNavigateTab} effectiveTheme={effectiveTheme} />
 
-      {/* Authentication Modal - Only Official Google Account Sign In */}
+      {/* Authentication Modal - Official Google & Secure Bcrypt Sign In */}
       <AuthModal
         isOpen={showAuthModal}
         onClose={() => setShowAuthModal(false)}
         onGoogleLogin={loginWithGoogle}
+        onEmailLogin={login}
+        onEmailRegister={register}
+        onForgotPassword={forgotPassword}
+        onResetPassword={resetPassword}
+      />
+
+      {/* Settings Modal */}
+      <SettingsModal
+        isOpen={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        theme={theme}
+        onThemeChange={setTheme}
+      />
+
+      {/* Help Modal */}
+      <HelpModal
+        isOpen={showHelpModal}
+        onClose={() => setShowHelpModal(false)}
+        onTryCommand={(cmd) => {
+          setInitialCommand(cmd);
+          setCurrentTab('home');
+        }}
       />
     </div>
   );

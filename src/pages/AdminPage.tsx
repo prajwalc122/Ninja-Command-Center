@@ -223,6 +223,47 @@ export const AdminPage: React.FC<Props> = ({ token }) => {
           })}
         </div>
       </div>
+
+      {/* Security Audit Trail */}
+      <div className="rounded-3xl border border-slate-800 bg-[#0d1322] p-6 space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+          <div>
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              <Shield className="w-4 h-4 text-emerald-400" />
+              <span>Real-Time Security Audit Stream</span>
+            </h3>
+            <p className="text-xs text-slate-400">Brute-force defenses, authentication logs, and threat mitigations</p>
+          </div>
+          <span className="text-xs font-mono text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
+            Defense Active
+          </span>
+        </div>
+
+        {stats.securityLogs && stats.securityLogs.length > 0 ? (
+          <div className="space-y-2 max-h-60 overflow-y-auto pr-1 font-mono text-xs">
+            {stats.securityLogs.map((log, i) => (
+              <div
+                key={i}
+                className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800/80 flex items-center justify-between text-slate-300"
+              >
+                <div className="flex items-center gap-2 truncate">
+                  <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800/50">
+                    {log.eventType}
+                  </span>
+                  <span className="text-slate-400 truncate">{log.email || log.ip}</span>
+                </div>
+                <span className="text-[10px] text-slate-500 shrink-0">
+                  {new Date(log.timestamp).toLocaleTimeString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-xs text-slate-400 py-4 text-center">
+            Zero security violations recorded. System running with full parameter validation and rate limiting.
+          </div>
+        )}
+      </div>
     </div>
   );
 };

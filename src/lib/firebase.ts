@@ -144,3 +144,27 @@ export async function signInWithGoogle() {
 export async function firebaseSignOut() {
   await signOut(auth);
 }
+
+/**
+ * Persist command history to Firestore under users/{userId}/history/{historyId}
+ */
+export async function recordHistoryToFirestore(userId: string, record: any) {
+  if (!userId) return;
+  try {
+    const historyId = `hist_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const historyRef = doc(db, 'users', userId, 'history', historyId);
+    await setDoc(historyRef, {
+      id: historyId,
+      userId,
+      command: record.command || 'Unnamed Command',
+      toolId: record.toolId || 'gemini-assistant',
+      toolName: record.toolName || record.toolId || 'Gemini Assistant',
+      status: record.status || 'success',
+      resultPreview: record.resultPreview ? String(record.resultPreview).slice(0, 1000) : '',
+      timestamp: new Date().toISOString(),
+      createdAt: serverTimestamp(),
+    });
+  } catch (err) {
+    console.warn('Could not persist history item to Firestore:', err);
+  }
+}

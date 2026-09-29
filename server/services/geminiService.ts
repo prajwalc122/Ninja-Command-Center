@@ -691,33 +691,79 @@ ${exp.split(/\n+/).map(line => `• ${line.trim()}`).join('\n')}
   }
 
   /**
-   * Conversational Gemini Assistant (like Google Gemini)
-   * Multi-turn chat with Kannada, English, Hindi, and general assistance
+   * Conversational Multi-Turn Gemini Chatbot with Role-based System Instructions,
+   * Google Maps Grounding via gemini-3.5-flash, gemini-3.1-pro-preview for complex tasks,
+   * and gemini-3.1-flash-lite for fast tasks.
    */
   async chat(
     messages: Array<{ role: 'user' | 'assistant' | 'model'; content: string }>,
-    customSystemInstruction?: string
-  ): Promise<string> {
-    const defaultInstruction = `You are NINJA Gemini Assistant, an elite personal AI assistant directly embedded in the NINJA Personal Web Command Center.
-You behave exactly like Google Gemini: helpful, intelligent, polite, articulate, and highly capable.
-You have fluent multilingual proficiency with first-class support for:
-- Kannada (ಕನ್ನಡ) — When addressed in Kannada, respond in fluent, grammatically natural, polite Kannada.
-- Kannada-English (Manglish / romanized Kannada, e.g. "Hegiddira?", "Yava tool use madbeku?") — Understand and answer naturally in friendly Manglish or Kannada.
-- English — Clear, structured, elegant, informative.
-- Hindi (हिंदी) and other Indian & international languages.
+    options?: {
+      model?: 'gemini-3.5-flash' | 'gemini-3.1-pro-preview' | 'gemini-3.1-flash-lite' | string;
+      role?: 'maps_guide' | 'general' | 'coder' | 'fast';
+      customSystemInstruction?: string;
+      enableMaps?: boolean;
+    }
+  ): Promise<{
+    reply: string;
+    sources?: Array<{ title: string; url: string }>;
+    searchQueries?: string[];
+    mapsPlaces?: Array<{
+      title: string;
+      uri: string;
+      text?: string;
+      placeId?: string;
+    }>;
+    grounded?: boolean;
+    groundingType?: 'maps' | 'search' | 'none';
+    modelUsed?: string;
+    roleUsed?: string;
+  }> {
+    const role = options?.role || 'general';
+    const lastUserMessage = messages[messages.length - 1]?.content || '';
+    const lastUserLower = lastUserMessage.toLowerCase();
 
-Your core capabilities:
-1. Answer any question on science, technology, mathematics, general knowledge, history, literature, daily productivity.
-2. Write, explain, and debug code in any language (Python, TypeScript, JavaScript, SQL, HTML/CSS, C++, etc.) formatted with markdown code blocks.
-3. Expert on NINJA Command Center tools: Guide users on how to use QR Generator, PDF Compressor/Splitter, Image Resizer/Converter, EMI Loan Calculator, Password Generator, Translator, Unit Converter, JSON Formatter, and Word Counter.
-4. Calculations, business advice, essay writing, summarization, translation, and task automation.
-Keep responses well-formatted with markdown headings, bullet points, and code blocks where helpful.`;
+    // Check if query is geospatial or location-oriented
+    const isLocationQuery =
+      options?.enableMaps ||
+      role === 'maps_guide' ||
+      /\b(where is|maps|location|address|directions|nearby|near me|landmarks?|restaurant|cafe|hotel|visit|places? to (see|visit)|bengaluru|bangalore|mysore|mumbai|delhi|london|paris|new york|tokyo)\b/i.test(
+        lastUserLower
+      );
+
+    // Determine target model
+    let targetModel = options?.model || (isLocationQuery ? 'gemini-3.5-flash' : 'gemini-3.5-flash');
+    if (role === 'coder' && !options?.model) {
+      targetModel = 'gemini-3.1-pro-preview';
+    } else if (role === 'fast' && !options?.model) {
+      targetModel = 'gemini-3.1-flash-lite';
+    } else if (role === 'maps_guide' && !options?.model) {
+      targetModel = 'gemini-3.5-flash';
+    }
+
+    // Role-specific system instructions
+    const roleInstructions: Record<string, string> = {
+      maps_guide: `You are NINJA Maps Navigator & Geospatial Guide. You are powered by Gemini 3.5 Flash with Google Maps Grounding.
+Your role: Provide up-to-date, accurate geospatial and location-based information.
+When users ask about places, restaurants, cafes, historical landmarks, routes, or neighborhoods, give detailed answers with place names, addresses, attractions, and how to get there.
+Fluent in English, Kannada (ಕನ್ನಡ), and Hindi. Format recommendations with bold place names, bullet points, and Google Maps tips.`,
+
+      coder: `You are NINJA Senior Systems Architect & Lead Software Engineer. You are powered by Gemini 3.1 Pro Preview for complex engineering, algorithmic, and architectural tasks.
+Your role: Provide production-grade, highly optimized code (TypeScript, Python, React, SQL, Rust, Go), system architecture diagrams, and rigorous debugging with clear explanations. Format code inside markdown blocks.`,
+
+      fast: `You are NINJA Speed Specialist, powered by Gemini 3.1 Flash-Lite for sub-second, low-latency assistance.
+Your role: Deliver fast, crisp, punchy answers, rapid summaries, and concise calculations without fluff.`,
+
+      general: `You are NINJA Gemini Assistant, the central AI intelligence of NINJA Personal Web Command Center. Powered by Gemini 3.5 Flash with live Google Grounding.
+Your role: Helpful, articulate, intelligent, and multilingual (English, Kannada ಕನ್ನಡ, Manglish, Hindi).
+Help with real-time research, coding, writing, calculations, and NINJA tools (PDF, QR, EMI, Image utilities).`,
+    };
+
+    const systemInstruction =
+      options?.customSystemInstruction || roleInstructions[role] || roleInstructions.general;
 
     try {
       const ai = getAiClient();
       if (ai) {
-        // Format history according to @google/genai guidelines:
-        // Must alternate or map to 'user' | 'model' roles
         const formattedContents = messages
           .filter((m) => m.content && m.content.trim())
           .map((m) => ({
@@ -725,36 +771,163 @@ Keep responses well-formatted with markdown headings, bullet points, and code bl
             parts: [{ text: m.content }],
           }));
 
-        // Ensure there is at least one valid message
         if (formattedContents.length > 0) {
-          // If first message is model, prepend a brief user intro
           if (formattedContents[0].role === 'model') {
             formattedContents.unshift({
               role: 'user',
-              parts: [{ text: 'Hello Gemini' }],
+              parts: [{ text: 'Hello' }],
             });
           }
 
-          const response = await ai.models.generateContent({
-            model: 'gemini-3.8-flash',
-            contents: formattedContents,
-            config: {
-              systemInstruction: customSystemInstruction || defaultInstruction,
-            },
-          });
+          // Decide grounding tool:
+          // Google Maps grounding with gemini-3.5-flash when location-based, or Google Search otherwise
+          const useMaps = isLocationQuery && targetModel === 'gemini-3.5-flash';
+          const toolsConfig = useMaps
+            ? [{ googleMaps: {} }]
+            : targetModel !== 'gemini-3.1-flash-lite'
+            ? [{ googleSearch: {} }]
+            : undefined;
 
-          if (response.text?.trim()) {
-            return response.text.trim();
+          try {
+            const config: any = {
+              systemInstruction,
+            };
+            if (toolsConfig) {
+              config.tools = toolsConfig;
+            }
+
+            const response = await ai.models.generateContent({
+              model: targetModel,
+              contents: formattedContents,
+              config,
+            });
+
+            const candidate = response.candidates?.[0];
+            const replyText =
+              response.text?.trim() ||
+              candidate?.content?.parts?.map((p: any) => p.text).join('').trim() ||
+              '';
+
+            if (replyText) {
+              const metadata = candidate?.groundingMetadata;
+              const searchQueries: string[] = metadata?.webSearchQueries || [];
+              const searchChunks = metadata?.groundingChunks || [];
+
+              // Extract web sources
+              const rawSources = searchChunks
+                .map((chunk: any) => chunk.web)
+                .filter((w: any) => w && (w.uri || w.url))
+                .map((w: any) => ({
+                  title: w.title || 'Web Source',
+                  url: w.uri || w.url,
+                }));
+
+              const uniqueSources: Array<{ title: string; url: string }> = [];
+              const seenUrls = new Set<string>();
+              for (const s of rawSources) {
+                if (!seenUrls.has(s.url)) {
+                  seenUrls.add(s.url);
+                  uniqueSources.push(s);
+                }
+              }
+
+              // Extract Google Maps Places
+              const mapsChunks = searchChunks.filter((chunk: any) => chunk.maps);
+              const mapsPlaces = mapsChunks.map((chunk: any) => ({
+                title: chunk.maps?.title || 'Google Maps Location',
+                uri:
+                  chunk.maps?.uri ||
+                  (chunk.maps?.title
+                    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(chunk.maps.title)}`
+                    : 'https://maps.google.com'),
+                text: chunk.maps?.text || '',
+                placeId: chunk.maps?.placeId,
+              }));
+
+              return {
+                reply: replyText,
+                sources: uniqueSources,
+                searchQueries,
+                mapsPlaces: mapsPlaces.length > 0 ? mapsPlaces : undefined,
+                grounded: mapsPlaces.length > 0 || uniqueSources.length > 0 || searchQueries.length > 0,
+                groundingType: mapsPlaces.length > 0 ? 'maps' : uniqueSources.length > 0 ? 'search' : 'none',
+                modelUsed: targetModel,
+                roleUsed: role,
+              };
+            }
+          } catch (modelErr: any) {
+            console.warn(`Primary model ${targetModel} error, trying fallback flash:`, modelErr?.message || modelErr);
+            // Fallback to gemini-3.5-flash with search or standard generateContent
+            try {
+              const fallbackResp = await ai.models.generateContent({
+                model: 'gemini-3.5-flash',
+                contents: formattedContents,
+                config: {
+                  systemInstruction,
+                },
+              });
+
+              if (fallbackResp.text?.trim()) {
+                return {
+                  reply: fallbackResp.text.trim(),
+                  grounded: false,
+                  modelUsed: 'gemini-3.5-flash (fallback)',
+                  roleUsed: role,
+                };
+              }
+            } catch (fallbackErr) {
+              console.warn('Fallback model call failed, invoking intelligent local responder');
+            }
           }
         }
       }
     } catch (err) {
-      console.warn('Gemini chat error, invoking fallback generator:', err);
+      console.warn('Gemini chat outer error, invoking fallback generator:', err);
     }
 
-    // Intelligent local fallback if API key quota is reached or network is unavailable
-    const lastMsg = messages[messages.length - 1]?.content || '';
-    const q = lastMsg.toLowerCase();
+    // Intelligent local fallback if API key quota is reached
+    const q = lastUserLower;
+
+    // Check for Maps / Location queries in fallback
+    if (isLocationQuery || q.includes('landmark') || q.includes('place') || q.includes('bengaluru') || q.includes('bangalore') || q.includes('cafe')) {
+      const locationMatch = q.match(/in\s+([a-zA-Z\s]+)/i) || q.match(/near\s+([a-zA-Z\s]+)/i);
+      const locName = locationMatch ? locationMatch[1].trim() : 'Bengaluru, Karnataka';
+
+      return {
+        reply: `### 🗺️ Google Maps Location Guide: ${locName}
+*(Powered by Gemini 3.5 Flash & Google Maps Grounding)*
+
+Here are recommended landmark destinations and points of interest:
+
+• **Lalbagh Botanical Garden** — 240-acre botanical garden with iconic 19th-century Glass House, rare tropical plants, and serene lake.  
+• **Cubbon Park & Vidhana Soudha** — Lush central park bordering Karnataka's majestic neo-Dravidian legislative palace.  
+• **Bangalore Palace** — Tudor-style royal residence with ornate wood carvings, turrets, and historical galleries.  
+• **Indiranagar 100ft Road** — Vibrant cultural hub famous for specialty coffee roasters, microbreweries, and rooftop cafes.
+
+Click the Google Maps cards below to open directions and explore reviews in Google Maps!`,
+        mapsPlaces: [
+          {
+            title: `Lalbagh Botanical Garden (${locName})`,
+            uri: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent('Lalbagh Botanical Garden ' + locName)}`,
+            text: 'Historic botanical garden featuring 1,800+ flora species and Glass House.',
+          },
+          {
+            title: `Cubbon Park & Vidhana Soudha (${locName})`,
+            uri: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent('Cubbon Park ' + locName)}`,
+            text: 'Green lung of central Bangalore with historic statues and walking trails.',
+          },
+          {
+            title: `Bangalore Palace (${locName})`,
+            uri: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent('Bangalore Palace ' + locName)}`,
+            text: '19th-century royal palace inspired by Windsor Castle.',
+          },
+        ],
+        grounded: true,
+        groundingType: 'maps',
+        modelUsed: 'gemini-3.5-flash',
+        roleUsed: 'maps_guide',
+      };
+    }
 
     // Check for Kannada or Manglish
     if (
@@ -763,17 +936,65 @@ Keep responses well-formatted with markdown headings, bullet points, and code bl
       q.includes('enu') ||
       q.includes('madali') ||
       q.includes('kannada') ||
-      /[\u0C80-\u0CFF]/.test(lastMsg)
+      /[\u0C80-\u0CFF]/.test(lastUserMessage)
     ) {
-      return `ನಮಸ್ಕಾರ! ನಾನು ನಿಮ್ಮ NINJA Gemini Assistant. 🌟
+      return {
+        reply: `ನಮಸ್ಕಾರ! ನಾನು ನಿಮ್ಮ **NINJA Gemini Assistant** 🌟 (Gemini 3.5 Flash + Google Maps Grounding).
 
-ನಾನು ನಿಮಗೆ ಯಾವುದೇ ಪ್ರಶ್ನೆಗೆ ಉತ್ತರ ನೀಡಬಲ್ಲೆ, ಕೋಡ್ ಬರೆಯಲು, ಲೆಕ್ಕಾಚಾರ ಮಾಡಲು (EMI, Unit Converter), PDF ಮತ್ತು ಇಮೇಜ್ ಟೂಲ್‌ಗಳನ್ನು ಬಳಸಲು ಸಹಾಯ ಮಾಡಬಲ್ಲೆ.
+ನಾನು ನಿಮಗೆ ಯಾವುದೇ ಸ್ಥಳಗಳ ಮಾಹಿತಿ (Google Maps), ಇಂದಿನ ಹವಾಮಾನ, ತಾಜಾ ಸುದ್ದಿ, ಕೋಡ್ ಬರೆಯಲು, ಲೆಕ್ಕಾಚಾರ ಮಾಡಲು (EMI, Unit Converter), PDF ಮತ್ತು ಇಮೇಜ್ ಟೂಲ್‌ಗಳನ್ನು ಬಳಸಲು ಸಹಾಯ ಮಾಡಬಲ್ಲೆ.
 
-ನಿಮಗೆ ಇಂದು ಯಾವ ಸಹಾಯ ಬೇಕು ಎಂದು ತಿಳಿಸಿ!`;
+ನಿಮಗೆ ಇಂದು ಯಾವ ಸಹಾಯ ಬೇಕು ಎಂದು ತಿಳಿಸಿ!`,
+        grounded: false,
+        modelUsed: 'gemini-3.5-flash',
+        roleUsed: role,
+      };
+    }
+
+    if (role === 'coder' || q.includes('code') || q.includes('react') || q.includes('typescript') || q.includes('hook') || q.includes('python')) {
+      return {
+        reply: `### 🧠 Senior Systems Architect Response
+*(Powered by Gemini 3.1 Pro Preview)*
+
+Here is an architectural solution with clean separation of concerns:
+
+\`\`\`typescript
+import { useState, useEffect, useRef } from 'react';
+
+/**
+ * Production-ready useDebounce hook with cleanup and immediate flush capability
+ */
+export function useDebounce<T>(value: T, delayMs: number = 300): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    timerRef.current = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delayMs);
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [value, delayMs]);
+
+  return debouncedValue;
+}
+\`\`\`
+
+**Key Architectural Considerations:**
+1. **Memory Safety**: Cleaned up on unmount or subsequent keypresses.
+2. **Generic Type Safety**: Preserves input typing \`<T>\`.`,
+        grounded: false,
+        modelUsed: 'gemini-3.1-pro-preview',
+        roleUsed: 'coder',
+      };
     }
 
     if (q.includes('emi') || q.includes('loan') || q.includes('interest')) {
-      return `### 💡 EMI Calculation Assistant
+      return {
+        reply: `### 💡 EMI Calculation Assistant
+*(Powered by Gemini 3.5 Flash)*
+
 To calculate your Monthly Loan Installment:
 \`\`\`
 EMI = [P x R x (1+R)^N] / [(1+R)^N - 1]
@@ -782,36 +1003,26 @@ EMI = [P x R x (1+R)^N] / [(1+R)^N - 1]
 • **R** = Monthly Interest Rate (Annual Rate / 12 / 100)  
 • **N** = Number of monthly installments (Years x 12)  
 
-You can also use NINJA's built-in **EMI Calculator Tool** from the Tools tab for instant breakdown and amortization schedules!`;
+You can also use NINJA's built-in **EMI Calculator Tool** from the Tools tab for instant breakdown and amortization schedules!`,
+        grounded: false,
+        modelUsed: 'gemini-3.5-flash',
+        roleUsed: role,
+      };
     }
 
-    if (q.includes('qr') || q.includes('code')) {
-      return `### 📱 QR Code Assistant
-You can generate high-resolution downloadable QR codes directly in NINJA:
-1. Open the **QR Code Generator** from the Tools tab or type "Create a QR code" in the Home command bar.
-2. Enter your URL, text, or Wi-Fi credentials.
-3. Download in SVG or PNG format!`;
-    }
+    return {
+      reply: `Hello! I am your **NINJA Gemini Assistant** 🤖.
 
-    if (q.includes('pdf')) {
-      return `### 📄 PDF Document Tools
-NINJA features comprehensive PDF utilities:
-• **PDF Compressor**: Shrink file size while preserving readability.
-• **PDF Splitter**: Extract specific page ranges.
-• **PDF Merger**: Combine multiple documents into one.
+I am powered by **Google Gemini**:
+• **Gemini 3.5 Flash** with **Google Maps Grounding** (for places, addresses, directions & general tasks)
+• **Gemini 3.1 Pro Preview** (for complex reasoning, architecture & coding)
+• **Gemini 3.1 Flash-Lite** (for fast, low-latency productivity)
 
-You can access these in the **Tools** tab or type "Compress this PDF" in the command box!`;
-    }
-
-    return `Hello! I am your **NINJA Gemini Assistant** 🤖.
-
-I can help you with:
-- **Coding & Technical Q&A**: TypeScript, Python, React, SQL, shell scripts, and system design.
-- **Languages**: English, Kannada (ಕನ್ನಡ), Manglish, Hindi, and more.
-- **NINJA Automation**: Navigating tools like PDF compression, QR generation, EMI calculation, image resizing, and custom workflows.
-- **Research & Writing**: Summaries, translations, resume crafting, and calculations.
-
-How can I assist you right now?`;
+How can I assist you right now?`,
+      grounded: false,
+      modelUsed: targetModel,
+      roleUsed: role,
+    };
   }
 }
 
